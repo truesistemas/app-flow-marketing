@@ -1,0 +1,206 @@
+{
+  "name": "Flow de Boas-vindas com IA",
+  "description": "Exemplo de flow que recebe uma mensagem, responde com IA e aguarda resposta",
+  "triggerKeyword": "oi",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "START",
+      "position": {
+        "x": 100,
+        "y": 100
+      },
+      "label": "Início",
+      "config": {
+        "triggerType": "KEYWORD",
+        "keyword": "oi"
+      }
+    },
+    {
+      "id": "message-1",
+      "type": "MESSAGE",
+      "position": {
+        "x": 300,
+        "y": 100
+      },
+      "label": "Mensagem de Boas-vindas",
+      "config": {
+        "text": "Olá! Bem-vindo ao nosso atendimento. Como posso ajudar você hoje?",
+        "variables": []
+      }
+    },
+    {
+      "id": "action-1",
+      "type": "ACTION",
+      "position": {
+        "x": 500,
+        "y": 100
+      },
+      "label": "Aguardar Resposta",
+      "config": {
+        "actionType": "WAIT_RESPONSE",
+        "timeout": 300,
+        "saveResponseAs": "userQuestion"
+      }
+    },
+    {
+      "id": "ai-1",
+      "type": "AI",
+      "position": {
+        "x": 700,
+        "y": 100
+      },
+      "label": "Gerar Resposta com IA",
+      "config": {
+        "provider": "OPENAI",
+        "model": "gpt-4",
+        "temperature": 0.7,
+        "maxTokens": 500,
+        "systemPrompt": "Você é um assistente virtual amigável e prestativo. Responda de forma clara e objetiva.",
+        "userPrompt": "O usuário perguntou: {{userQuestion}}. Responda de forma amigável e útil.",
+        "contextVariables": ["userQuestion"],
+        "saveResponseAs": "aiResponse"
+      }
+    },
+    {
+      "id": "message-2",
+      "type": "MESSAGE",
+      "position": {
+        "x": 900,
+        "y": 100
+      },
+      "label": "Enviar Resposta da IA",
+      "config": {
+        "text": "{{aiResponse}}",
+        "variables": ["aiResponse"]
+      }
+    },
+    {
+      "id": "action-2",
+      "type": "ACTION",
+      "position": {
+        "x": 1100,
+        "y": 100
+      },
+      "label": "Aguardar Nova Resposta",
+      "config": {
+        "actionType": "WAIT_RESPONSE",
+        "saveResponseAs": "userFeedback"
+      }
+    },
+    {
+      "id": "condition-1",
+      "type": "CONDITION",
+      "position": {
+        "x": 1300,
+        "y": 100
+      },
+      "label": "Verificar Satisfação",
+      "config": {
+        "condition": {
+          "variable": "userFeedback",
+          "operator": "CONTAINS",
+          "value": "obrigado"
+        }
+      }
+    },
+    {
+      "id": "message-3",
+      "type": "MESSAGE",
+      "position": {
+        "x": 1500,
+        "y": 50
+      },
+      "label": "Mensagem de Agradecimento",
+      "config": {
+        "text": "Fico feliz em ajudar! Se precisar de mais alguma coisa, é só chamar. 😊",
+        "variables": []
+      }
+    },
+    {
+      "id": "message-4",
+      "type": "MESSAGE",
+      "position": {
+        "x": 1500,
+        "y": 150
+      },
+      "label": "Oferecer Mais Ajuda",
+      "config": {
+        "text": "Posso ajudar com mais alguma coisa?",
+        "variables": []
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "END",
+      "position": {
+        "x": 1700,
+        "y": 100
+      },
+      "label": "Fim",
+      "config": {
+        "message": "Obrigado por usar nosso serviço!"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "start-1",
+      "target": "message-1"
+    },
+    {
+      "id": "edge-2",
+      "source": "message-1",
+      "target": "action-1"
+    },
+    {
+      "id": "edge-3",
+      "source": "action-1",
+      "target": "ai-1"
+    },
+    {
+      "id": "edge-4",
+      "source": "ai-1",
+      "target": "message-2"
+    },
+    {
+      "id": "edge-5",
+      "source": "message-2",
+      "target": "action-2"
+    },
+    {
+      "id": "edge-6",
+      "source": "action-2",
+      "target": "condition-1"
+    },
+    {
+      "id": "edge-7",
+      "source": "condition-1",
+      "target": "message-3",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "edge-8",
+      "source": "condition-1",
+      "target": "message-4",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "edge-9",
+      "source": "message-3",
+      "target": "end-1"
+    },
+    {
+      "id": "edge-10",
+      "source": "message-4",
+      "target": "end-1"
+    }
+  ]
+}
+
+
+
+
+
+
