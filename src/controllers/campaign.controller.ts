@@ -675,7 +675,7 @@ export class CampaignController {
 
       return reply.send({
         success: true,
-        message: `Reset de ${executions.length} execução(ões) de Flow associado(s) à campanha concluído.`,
+        message: `Reset de ${executions.length} execução(ões) de Flow associado(s) à campanha concluído. Os flows serão executados quando os contatos interagirem novamente.`,
       });
     } catch (error: any) {
       console.error('[CampaignController] Erro ao resetar execuções de Flow da campanha:', error);

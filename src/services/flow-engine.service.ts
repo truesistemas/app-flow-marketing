@@ -163,17 +163,32 @@ export class FlowEngineService {
     }
 
     if (activeExecution && shouldContinueActiveExecution) {
-      console.log(`[Flow Engine] 🔄 Execução ativa encontrada: ${activeExecution.id} (Status: ${activeExecution.status}, Flow: ${activeExecution.flow.name})`);
+      console.log(`[Flow Engine] 🔄🔄🔄 EXECUÇÃO ATIVA ENCONTRADA!`);
+      console.log(`[Flow Engine] 🔄 Execução ID: ${activeExecution.id}`);
+      console.log(`[Flow Engine] 🔄 Status: ${activeExecution.status}`);
+      console.log(`[Flow Engine] 🔄 Flow: ${activeExecution.flow.name} (${activeExecution.flow.id})`);
+      console.log(`[Flow Engine] 🔄 Nó atual: ${activeExecution.currentNodeId}`);
       console.log(`[Flow Engine] 🔄 Continuando execução existente ao invés de criar nova`);
+      
+      // Verificar o tipo do nó atual para logs mais detalhados
+      const flowStructure = activeExecution.flow.nodes as unknown as FlowNode[];
+      const currentNode = flowStructure.find(
+        (node) => node.id === activeExecution.currentNodeId
+      );
+      
+      if (currentNode) {
+        console.log(`[Flow Engine] 🔄 Tipo do nó atual: ${currentNode.type}`);
+        if (currentNode.type === 'START') {
+          console.log(`[Flow Engine] 🔄🔄🔄 NÓ START DETECTADO! Isso indica execução resetada.`);
+        }
+      } else {
+        console.warn(`[Flow Engine] ⚠️ Nó atual ${activeExecution.currentNodeId} não encontrado na estrutura do flow!`);
+      }
       
       // Se a execução está PROCESSING, aguardar resposta do usuário (mudar para WAITING)
       if (activeExecution.status === FlowStatus.PROCESSING) {
+        console.log(`[Flow Engine] 🔄 Status é PROCESSING, continuando execução...`);
         // Verificar se o nó atual é um ACTION (aguardando resposta)
-        const flowStructure = activeExecution.flow.nodes as unknown as FlowNode[];
-        const currentNode = flowStructure.find(
-          (node) => node.id === activeExecution.currentNodeId
-        );
-        
         if (currentNode?.type === 'ACTION') {
           // Continuar execução normalmente
           await this.continueFlowExecution(activeExecution.id, message);
@@ -184,7 +199,10 @@ export class FlowEngineService {
         }
       } else {
         // Status WAITING - continuar execução normalmente
+        console.log(`[Flow Engine] 🔄 Status é WAITING, continuando execução...`);
+        console.log(`[Flow Engine] 🔄 Chamando continueFlowExecution para execução ${activeExecution.id}`);
         await this.continueFlowExecution(activeExecution.id, message);
+        console.log(`[Flow Engine] 🔄 continueFlowExecution concluído`);
       }
       return; // Não processar mais nada
     } else {
@@ -198,6 +216,27 @@ export class FlowEngineService {
         for (const campaign of activeCampaigns) {
           if (campaign.flow) {
             console.log(`[Flow Engine] 🎯 Tentando iniciar flow da campanha: ${campaign.flow.name} (${campaign.flow.id})`);
+            
+            // ✅ CRÍTICO: Verificar PRIMEIRO se já existe execução COMPLETED para este flow e contato
+            // Esta verificação deve ser feita ANTES de verificar trigger ou iniciar flow
+            const existingCompleted = await this.prisma.flowExecution.findFirst({
+              where: {
+                contactId: contact.id,
+                flowId: campaign.flow.id,
+                status: FlowStatus.COMPLETED,
+              },
+              orderBy: {
+                completedAt: 'desc',
+              },
+            });
+
+            if (existingCompleted) {
+              console.log(`[Flow Engine] 🚫🚫🚫 BLOQUEIO: Flow ${campaign.flow.name} já foi COMPLETADO para este contato!`);
+              console.log(`[Flow Engine] 🚫 Execução COMPLETED: ${existingCompleted.id}`);
+              console.log(`[Flow Engine] 🚫 Completada em: ${existingCompleted.completedAt}`);
+              console.log(`[Flow Engine] 🚫 Use "Resetar Flows" na campanha para permitir re-execução.`);
+              continue; // Pular esta campanha e verificar próxima (se houver)
+            }
             
             // Verificar trigger do flow da campanha
             const flowStructure = campaign.flow.nodes as any[];
@@ -251,6 +290,8 @@ export class FlowEngineService {
     executionId: string,
     userMessage: string
   ): Promise<void> {
+    console.log(`[Flow Engine] 🔄 continueFlowExecution chamado para execução ${executionId}`);
+    
     const execution = await this.prisma.flowExecution.findUnique({
       where: { id: executionId },
       include: {
@@ -259,7 +300,16 @@ export class FlowEngineService {
       },
     });
 
-    if (!execution || execution.status !== FlowStatus.WAITING) {
+    if (!execution) {
+      console.error(`[Flow Engine] ❌ Execução ${executionId} não encontrada`);
+      return;
+    }
+
+    console.log(`[Flow Engine] 🔍 Status da execução: ${execution.status}`);
+    console.log(`[Flow Engine] 🔍 Nó atual: ${execution.currentNodeId}`);
+
+    if (execution.status !== FlowStatus.WAITING) {
+      console.log(`[Flow Engine] ⚠️ Execução não está em WAITING (status: ${execution.status}). Retornando.`);
       return;
     }
 
@@ -268,11 +318,19 @@ export class FlowEngineService {
       where: { id: executionId },
       data: { status: FlowStatus.PROCESSING },
     });
+    
+    console.log(`[Flow Engine] ✅ Status atualizado para PROCESSING`);
 
     try {
       const flowStructure = execution.flow.nodes as unknown as FlowNode[];
       const edges = execution.flow.edges as any[];
       const contextData = (execution.contextData || {}) as unknown as FlowContextData;
+
+      // Verificar se currentNodeId existe
+      if (!execution.currentNodeId) {
+        console.error(`[Flow Engine] ❌ Execução ${executionId} não possui currentNodeId`);
+        throw new Error(`Execução ${executionId} não possui currentNodeId`);
+      }
 
       // Encontrar o nó atual
       const currentNode = flowStructure.find(
@@ -281,6 +339,32 @@ export class FlowEngineService {
 
       if (!currentNode) {
         throw new Error(`Nó atual não encontrado: ${execution.currentNodeId}`);
+      }
+
+      // ✅ CRÍTICO: Se o nó atual é START (após reset), processar o START e avançar automaticamente
+      if (currentNode.type === 'START') {
+        console.log(`[Flow Engine] 🔄🔄🔄 Execução resetada detectada no nó START!`);
+        console.log(`[Flow Engine] 🔄 Nó START ID: ${currentNode.id}`);
+        console.log(`[Flow Engine] 🔄 Processando START e avançando automaticamente...`);
+        // Processar o nó START (que avança automaticamente para o próximo nó)
+        try {
+          if (!execution.currentNodeId) {
+            throw new Error(`currentNodeId é null para execução ${executionId}`);
+          }
+          await this.processNode(
+            executionId,
+            execution.currentNodeId,
+            flowStructure,
+            edges,
+            contextData
+          );
+          console.log(`[Flow Engine] ✅✅✅ Nó START processado com sucesso e avançou para próximo nó`);
+        } catch (error: any) {
+          console.error(`[Flow Engine] ❌❌❌ Erro ao processar nó START:`, error.message);
+          console.error(`[Flow Engine] ❌ Stack:`, error.stack);
+          throw error;
+        }
+        return; // START já processa e avança automaticamente
       }
 
       // Se o nó atual é um ActionNode, processar a resposta
@@ -429,6 +513,29 @@ export class FlowEngineService {
       console.log(`[Flow Engine] ${triggerMatches ? '✅' : '❌'} Trigger ${triggerMatches ? 'CORRESPONDE' : 'NÃO CORRESPONDE'} para flow ${flow.id}`);
       
       if (triggerMatches) {
+        // ✅ CRÍTICO: Verificar PRIMEIRO se já existe execução COMPLETED para este flow e contato
+        // REGRA ABSOLUTA: Se há execução COMPLETED, SEMPRE bloquear re-execução
+        const existingCompleted = await this.prisma.flowExecution.findFirst({
+          where: {
+            contactId,
+            flowId: flow.id,
+            status: FlowStatus.COMPLETED,
+          },
+          orderBy: {
+            completedAt: 'desc',
+          },
+        });
+
+        if (existingCompleted) {
+          console.log(`[Flow Engine] 🚫🚫🚫 BLOQUEIO ABSOLUTO: Flow ${flow.name} já foi COMPLETADO para este contato!`);
+          console.log(`[Flow Engine] 🚫 Execução COMPLETED: ${existingCompleted.id}`);
+          console.log(`[Flow Engine] 🚫 Completada em: ${existingCompleted.completedAt}`);
+          console.log(`[Flow Engine] 🚫 Flow: ${flow.id}`);
+          console.log(`[Flow Engine] 🚫 Contato: ${contactId}`);
+          console.log(`[Flow Engine] 🚫 RETORNANDO SEM INICIAR NOVA EXECUÇÃO!`);
+          continue; // Pular este flow e verificar próximo (se houver)
+        }
+
         // IMPORTANTE: Verificar se já existe uma execução ativa para este contato e flow
         // Isso evita reiniciar o flow quando o mesmo número envia múltiplas mensagens
         const existingExecution = await this.prisma.flowExecution.findFirst({
@@ -447,35 +554,6 @@ export class FlowEngineService {
           // Continuar a execução existente ao invés de criar nova
           await this.continueFlowExecution(existingExecution.id, message);
           return;
-        }
-
-        // Verificar se há execução COMPLETED recente e cooldown específico deste flow
-        const lastCompletedForThisFlow = await this.prisma.flowExecution.findFirst({
-          where: {
-            contactId,
-            flowId: flow.id,
-            status: FlowStatus.COMPLETED,
-          },
-          orderBy: {
-            completedAt: 'desc',
-          },
-        });
-
-        if (lastCompletedForThisFlow) {
-          // Verificar cooldown específico deste flow
-          const cooldownHours = (flow as any).cooldownHours;
-          
-          if (cooldownHours && cooldownHours > 0 && lastCompletedForThisFlow.completedAt) {
-            const completedAt = new Date(lastCompletedForThisFlow.completedAt);
-            const now = new Date();
-            const hoursSinceCompletion = (now.getTime() - completedAt.getTime()) / (1000 * 60 * 60);
-
-            if (hoursSinceCompletion < cooldownHours) {
-              const remainingHours = cooldownHours - hoursSinceCompletion;
-              console.log(`[Flow Engine] ⏸️ Cooldown ativo para flow ${flow.id}. Aguarde ${remainingHours.toFixed(1)} horas.`);
-              return; // Não iniciar novo flow
-            }
-          }
         }
 
         // Criar nova execução apenas se não existe execução ativa e cooldown expirado
@@ -645,6 +723,66 @@ export class FlowEngineService {
     console.log(`[Flow Engine]   - Flow: ${flowId}`);
     console.log(`[Flow Engine]   - Campanha: ${campaignId || 'N/A'}`);
 
+    // CRÍTICO: SEMPRE verificar PRIMEIRO se já existe execução COMPLETED
+    // Esta verificação deve ser feita ANTES de qualquer outra operação
+    // REGRA ABSOLUTA: Se há execução COMPLETED para este flow e contato, BLOQUEAR
+    // IMPORTANTE: Esta verificação deve ser feita SEMPRE, independente de ter campaignId ou não
+    console.log(`[Flow Engine] 🔍🔍🔍 VERIFICAÇÃO RIGOROSA: Procurando execuções COMPLETED...`);
+    console.log(`[Flow Engine]   - Contato: ${contactId}`);
+    console.log(`[Flow Engine]   - Flow: ${flowId}`);
+    console.log(`[Flow Engine]   - Campanha: ${campaignId || 'N/A'}`);
+    
+    // Buscar TODAS as execuções COMPLETED para este flow e contato
+    const allCompletedExecutions = await this.prisma.flowExecution.findMany({
+      where: {
+        contactId,
+        flowId,
+        status: FlowStatus.COMPLETED,
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    console.log(`[Flow Engine] 🔍 Total de execuções COMPLETED encontradas: ${allCompletedExecutions.length}`);
+
+    // REGRA ABSOLUTA: Se encontrar QUALQUER execução COMPLETED para este flow e contato, BLOQUEAR
+    // Não importa se tem campaignId ou não - se há execução COMPLETED, o flow já foi executado
+    if (allCompletedExecutions.length > 0) {
+      console.log(`[Flow Engine] ⚠️⚠️⚠️ ATENÇÃO: Encontrada(s) ${allCompletedExecutions.length} execução(ões) COMPLETED!`);
+      console.log(`[Flow Engine] ⚠️ REGRA ABSOLUTA: Se há execução COMPLETED, o flow JÁ FOI EXECUTADO para este contato!`);
+      
+      // BLOQUEAR SEMPRE se há execução COMPLETED, independente de ter campaignId ou não
+      const mostRecentCompleted = allCompletedExecutions[0];
+      const contextData = mostRecentCompleted.contextData as any;
+      const completedCampaignId = contextData?.campaignId;
+      
+      console.log(`[Flow Engine] 🔍 Analisando execução mais recente ${mostRecentCompleted.id}:`);
+      console.log(`[Flow Engine]   - Status: ${mostRecentCompleted.status}`);
+      console.log(`[Flow Engine]   - Completada em: ${mostRecentCompleted.completedAt}`);
+      console.log(`[Flow Engine]   - ContextData completo:`, JSON.stringify(contextData, null, 2));
+      console.log(`[Flow Engine]   - CampaignId na execução: ${completedCampaignId || 'NÃO ENCONTRADO'} (tipo: ${typeof completedCampaignId})`);
+      console.log(`[Flow Engine]   - CampaignId atual: ${campaignId || 'N/A'} (tipo: ${typeof campaignId})`);
+      
+      // REGRA ABSOLUTA: Se há execução COMPLETED para este flow e contato, SEMPRE bloquear
+      // Mesmo que não tenha campaignId, se há execução COMPLETED, o flow já foi executado
+      console.log(`[Flow Engine] 🚫🚫🚫 BLOQUEIO ABSOLUTO: Flow já foi COMPLETADO para este contato!`);
+      console.log(`[Flow Engine] 🚫 Execução COMPLETED: ${mostRecentCompleted.id}`);
+      console.log(`[Flow Engine] 🚫 Completada em: ${mostRecentCompleted.completedAt}`);
+      console.log(`[Flow Engine] 🚫 Flow: ${flowId}`);
+      console.log(`[Flow Engine] 🚫 Contato: ${contactId}`);
+      if (completedCampaignId) {
+        console.log(`[Flow Engine] 🚫 Campanha: ${completedCampaignId}`);
+      } else {
+        console.log(`[Flow Engine] 🚫 Campanha: NÃO ENCONTRADA (mas flow foi completado)`);
+      }
+      console.log(`[Flow Engine] 🚫 Use "Resetar Flows" na campanha para permitir re-execução.`);
+      console.log(`[Flow Engine] 🚫 RETORNANDO SEM INICIAR NOVA EXECUÇÃO!`);
+      return; // BLOQUEIO ABSOLUTO - Se há execução COMPLETED, SEMPRE bloquear
+    } else {
+      console.log(`[Flow Engine] ✅ Nenhuma execução COMPLETED encontrada. Prosseguindo...`);
+    }
+
     // CRÍTICO: Verificar e cancelar execuções ativas de OUTROS flows
     // O flow da campanha tem prioridade absoluta sobre qualquer outro flow
     const activeExecutions = await this.prisma.flowExecution.findMany({
@@ -706,41 +844,44 @@ export class FlowEngineService {
       return;
     }
 
-    // CRÍTICO: Para campanhas, verificar se já existe execução COMPLETED
-    // Se o flow já foi completado para este contato nesta campanha, NÃO permitir re-execução
-    // A re-execução só é permitida através do "Resetar Flows" na campanha
-    if (campaignId) {
-      const completedExecution = await this.prisma.flowExecution.findFirst({
-        where: {
-          contactId,
-          flowId,
-          status: FlowStatus.COMPLETED,
-        },
-        orderBy: {
-          completedAt: 'desc',
-        },
-      });
-
-      if (completedExecution) {
-        // Verificar se a execução COMPLETED pertence a esta campanha
-        const contextData = completedExecution.contextData as any;
-        if (contextData?.campaignId === campaignId) {
-          console.log(`[Flow Engine] 🚫 Flow já foi COMPLETADO para este contato nesta campanha.`);
-          console.log(`[Flow Engine] 🚫 Execução: ${completedExecution.id}`);
-          console.log(`[Flow Engine] 🚫 Completada em: ${completedExecution.completedAt}`);
-          console.log(`[Flow Engine] 🚫 Campanha: ${campaignId}`);
-          console.log(`[Flow Engine] 🚫 Use "Resetar Flows" na campanha para permitir re-execução.`);
-          return; // NÃO iniciar nova execução
-        }
-      }
-    }
-
     // Verificar se já existe uma execução ativa para este contato e flow
     // Usar transação para evitar condições de corrida (race conditions)
     let execution;
     try {
       execution = await this.prisma.$transaction(async (tx) => {
-        // Verificar novamente dentro da transação (com lock implícito)
+        // CRÍTICO: Verificação DUPLA dentro da transação (camada extra de segurança)
+        // REGRA ABSOLUTA: Se há execução COMPLETED para este flow e contato, SEMPRE bloquear
+        if (campaignId) {
+          const completedExecutionsInTx = await tx.flowExecution.findMany({
+            where: {
+              contactId,
+              flowId: flow.id,
+              status: FlowStatus.COMPLETED,
+            },
+            orderBy: {
+              completedAt: 'desc',
+            },
+          });
+
+          console.log(`[Flow Engine] 🔍 Verificação DENTRO da transação: ${completedExecutionsInTx.length} execução(ões) COMPLETED encontrada(s)`);
+
+          // REGRA ABSOLUTA: Se encontrar QUALQUER execução COMPLETED, BLOQUEAR
+          // Não importa se tem campaignId ou não - se há execução COMPLETED, o flow já foi executado
+          if (completedExecutionsInTx.length > 0) {
+            const mostRecentCompleted = completedExecutionsInTx[0];
+            const contextData = mostRecentCompleted.contextData as any;
+            const completedCampaignId = contextData?.campaignId;
+            
+            console.log(`[Flow Engine] 🚫🚫🚫 BLOQUEIO DENTRO DA TRANSAÇÃO: Flow já foi COMPLETADO!`);
+            console.log(`[Flow Engine] 🚫 Execução: ${mostRecentCompleted.id}`);
+            console.log(`[Flow Engine] 🚫 Completada em: ${mostRecentCompleted.completedAt}`);
+            console.log(`[Flow Engine] 🚫 CampaignId na execução: ${completedCampaignId || 'NÃO ENCONTRADO'}`);
+            console.log(`[Flow Engine] 🚫 CampaignId atual: ${campaignId}`);
+            throw new Error('FLOW_ALREADY_COMPLETED'); // Lançar erro para interromper transação
+          }
+        }
+
+        // Verificar execução ativa (PROCESSING/WAITING)
         const existingExecution = await tx.flowExecution.findFirst({
           where: {
             contactId,
@@ -758,27 +899,58 @@ export class FlowEngineService {
         }
 
         // Criar nova execução (com campaignId se fornecido)
+        // CRÍTICO: Garantir que campaignId está SEMPRE no contextData quando fornecido
+        const contextDataToSave: any = {
+          variables: {},
+          userResponses: [],
+          executedNodes: [],
+        };
+        
+        // SEMPRE adicionar campaignId se fornecido
+        if (campaignId) {
+          contextDataToSave.campaignId = campaignId;
+          console.log(`[Flow Engine] 🔒🔒🔒 CampaignId será salvo no contextData: ${campaignId}`);
+        }
+        
         const newExecution = await tx.flowExecution.create({
           data: {
             contactId,
             flowId: flow.id,
             currentNodeId: startNode.id,
             status: FlowStatus.PROCESSING,
-            contextData: {
-              variables: {},
-              userResponses: [],
-              executedNodes: [],
-              campaignId: campaignId, // Armazenar campaignId no contextData para uso posterior
-            },
+            contextData: contextDataToSave,
           },
         });
 
         console.log(`[Flow Engine] ✅ Nova execução criada: ${newExecution.id}`);
+        
+        // Verificar se campaignId foi realmente salvo
+        const savedContextData = newExecution.contextData as any;
+        const savedCampaignId = savedContextData?.campaignId;
+        
+        if (campaignId) {
+          if (savedCampaignId === campaignId) {
+            console.log(`[Flow Engine] ✅✅✅ CampaignId confirmado salvo no contextData: ${savedCampaignId}`);
+          } else {
+            console.error(`[Flow Engine] ❌❌❌ ERRO CRÍTICO: CampaignId NÃO foi salvo corretamente!`);
+            console.error(`[Flow Engine] ❌ Esperado: ${campaignId}, Salvo: ${savedCampaignId}`);
+            console.error(`[Flow Engine] ❌ ContextData salvo:`, JSON.stringify(savedContextData, null, 2));
+          }
+        } else {
+          console.log(`[Flow Engine] ℹ️ Nenhum campaignId fornecido (execução genérica)`);
+        }
+        
         return newExecution;
       }, {
         timeout: 10000, // Timeout de 10 segundos
       });
     } catch (error: any) {
+      // Se o erro for FLOW_ALREADY_COMPLETED, retornar sem iniciar nova execução
+      if (error.message === 'FLOW_ALREADY_COMPLETED') {
+        console.log(`[Flow Engine] 🚫 Transação interrompida: Flow já completado para esta campanha`);
+        return; // NÃO iniciar nova execução
+      }
+      
       // Se a transação falhar (por exemplo, devido a constraint violation), verificar se execução foi criada
       console.error(`[Flow Engine] ⚠️ Erro na transação:`, error.message);
       
@@ -803,8 +975,8 @@ export class FlowEngineService {
 
     // Se já existe execução ativa (não foi criada agora), não processar novamente
     // Verificar se esta execução foi criada recentemente (menos de 2 segundos)
-    if (execution.createdAt) {
-      const executionAge = Date.now() - new Date(execution.createdAt).getTime();
+    if (execution.startedAt) {
+      const executionAge = Date.now() - new Date(execution.startedAt).getTime();
       const isNewExecution = executionAge < 2000; // Menos de 2 segundos = nova execução
       
       if (!isNewExecution) {
@@ -813,8 +985,8 @@ export class FlowEngineService {
         return;
       }
     } else {
-      // Se não há createdAt, assumir que é nova execução
-      console.log(`[Flow Engine] ⚠️ Execução sem createdAt, assumindo que é nova`);
+      // Se não há startedAt, assumir que é nova execução
+      console.log(`[Flow Engine] ⚠️ Execução sem startedAt, assumindo que é nova`);
     }
 
     console.log(`[Flow Engine] Iniciando flow ${flowId} para contato ${contactId} (execução ${execution.id})`);
@@ -849,8 +1021,9 @@ export class FlowEngineService {
   }
 
   /**
-   * Reseta uma execução e reinicia do nó START
+   * Reseta uma execução e prepara para reiniciar do nó START
    * Agora permite resetar execuções ativas (PROCESSING/WAITING) também
+   * IMPORTANTE: NÃO dispara o flow automaticamente. O flow só será executado quando o contato interagir.
    */
   async resetExecution(executionId: string): Promise<void> {
     const execution = await this.prisma.flowExecution.findUnique({
@@ -904,26 +1077,22 @@ export class FlowEngineService {
     await this.prisma.flowExecution.update({
       where: { id: executionId },
       data: {
-        status: FlowStatus.PROCESSING,
+        status: FlowStatus.WAITING, // ✅ WAITING aguarda interação do contato
         currentNodeId: startNode.id,
         contextData: resetContextData as any,
         completedAt: null,
       },
     });
 
-    console.log(`[Flow Engine] 🔄 Execução ${executionId} resetada. Reiniciando do nó START.`);
+    console.log(`[Flow Engine] 🔄 Execução ${executionId} resetada. Preparada para reiniciar quando o contato interagir.`);
     if (resetContextData.campaignId) {
       console.log(`[Flow Engine] 🔄 Campanha vinculada: ${resetContextData.campaignId}`);
     }
+    console.log(`[Flow Engine] ✅ Execução resetada com status WAITING. O flow será executado quando o contato enviar uma mensagem.`);
 
-    // Processar a partir do nó START
-    await this.processNode(
-      executionId,
-      startNode.id,
-      flowStructure,
-      edges,
-      resetContextData as FlowContextData
-    );
+    // ✅ NÃO processar automaticamente aqui!
+    // O processamento só acontecerá quando o contato interagir novamente (enviar mensagem)
+    // Isso evita disparo automático de mensagens após o reset
   }
 
   /**
@@ -1061,18 +1230,84 @@ export class FlowEngineService {
     // Criar chave única para rastrear processamento: executionId + nodeId
     const processingKey = `${executionId}-${nodeId}`;
     
+    // Buscar o nó ANTES de verificar processamento (para saber o tipo)
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Nó não encontrado: ${nodeId}`);
+    }
+    
+    const isStartNode = node.type === 'START';
+    
     // Verificar se este nó já está sendo processado para esta execução
+    // ✅ EXCEÇÃO: Se o nó é START e está sendo chamado de continueFlowExecution (após reset),
+    // permitir processar mesmo se já estiver na lista (pode ser um caso legítimo de retry)
     if (this.processingNodes.has(processingKey)) {
-      console.log(`[Flow Engine] ⚠️ Nó ${nodeId} já está sendo processado para execução ${executionId}. Ignorando chamada duplicada.`);
-      return;
+      if (isStartNode) {
+        console.log(`[Flow Engine] ⚠️ Nó START ${nodeId} já está sendo processado, mas permitindo processamento (pode ser retry após reset)`);
+        // Remover da lista para permitir reprocessamento
+        this.processingNodes.delete(processingKey);
+      } else {
+        console.log(`[Flow Engine] ⚠️ Nó ${nodeId} já está sendo processado para execução ${executionId}. Ignorando chamada duplicada.`);
+        return;
+      }
     }
 
     // Marcar como sendo processado
     this.processingNodes.add(processingKey);
-    console.log(`[Flow Engine] 🔄 Iniciando processamento do nó ${nodeId} (execução ${executionId})`);
+    console.log(`[Flow Engine] 🔄 Iniciando processamento do nó ${nodeId} (execução ${executionId}, tipo: ${node.type})`);
 
     try {
-      const node = nodes.find((n) => n.id === nodeId);
+      // CRÍTICO: SEMPRE buscar contextData do banco ANTES de processar
+      // Isso garante que o campaignId esteja sempre presente, mesmo se foi perdido no parâmetro
+      const currentExecution = await this.prisma.flowExecution.findUnique({
+        where: { id: executionId },
+        select: { contextData: true },
+      });
+      
+      if (!currentExecution) {
+        throw new Error(`Execução ${executionId} não encontrada`);
+      }
+      
+      const currentContextData = currentExecution.contextData as any;
+      const existingCampaignId = currentContextData?.campaignId;
+      
+      // CRÍTICO: SEMPRE usar o contextData do banco como fonte da verdade para campaignId
+      // O campaignId DEVE estar sempre presente se foi salvo na criação
+      if (existingCampaignId) {
+        (contextData as any).campaignId = existingCampaignId;
+        console.log(`[Flow Engine] 🔒🔒🔒 CampaignId RECUPERADO do banco no processNode: ${existingCampaignId}`);
+      } else {
+        // Se não encontrou no banco, verificar se está no parâmetro
+        const paramCampaignId = (contextData as any).campaignId;
+        if (paramCampaignId) {
+          console.log(`[Flow Engine] ⚠️ CampaignId não encontrado no banco, mas está no parâmetro: ${paramCampaignId}`);
+          console.log(`[Flow Engine] ⚠️ Isso pode indicar que o campaignId foi perdido em uma atualização anterior!`);
+        } else {
+          console.error(`[Flow Engine] ❌❌❌ ERRO: CampaignId NÃO encontrado nem no banco nem no parâmetro!`);
+          console.error(`[Flow Engine] ❌ ContextData do banco:`, JSON.stringify(currentContextData, null, 2));
+        }
+      }
+      
+      // Preservar outras propriedades do banco que podem ter sido atualizadas
+      if (currentContextData) {
+        if (currentContextData.variables) {
+          contextData.variables = { ...currentContextData.variables, ...contextData.variables };
+        }
+        if (currentContextData.userResponses && Array.isArray(currentContextData.userResponses)) {
+          // Mesclar userResponses, evitando duplicatas
+          const existingResponses = currentContextData.userResponses || [];
+          const newResponses = contextData.userResponses || [];
+          const mergedResponses = [...existingResponses];
+          for (const newResp of newResponses) {
+            if (!mergedResponses.find(r => r.nodeId === newResp.nodeId && r.timestamp === newResp.timestamp)) {
+              mergedResponses.push(newResp);
+            }
+          }
+          contextData.userResponses = mergedResponses;
+        }
+      }
+      
+      // ✅ node já foi encontrado no início do método, não precisa buscar novamente
       if (!node) {
         throw new Error(`Nó não encontrado: ${nodeId}`);
       }
@@ -1086,8 +1321,7 @@ export class FlowEngineService {
         timestamp: new Date(),
         nodeType: node.type,
       });
-
-      // Atualizar currentNodeId e contextData no banco para que os logs apareçam em tempo real
+      
       // Usar updateMany para evitar lock de linha (melhor performance)
       try {
         await this.prisma.flowExecution.updateMany({
@@ -1098,6 +1332,9 @@ export class FlowEngineService {
           },
         });
         console.log(`[Flow Engine] 📝 currentNodeId atualizado para: ${nodeId}`);
+        if ((contextData as any).campaignId) {
+          console.log(`[Flow Engine] 📝 CampaignId preservado: ${(contextData as any).campaignId}`);
+        }
       } catch (error) {
         // Se falhar, continuar execução (não é crítico)
         console.warn(`[Flow Engine] Erro ao atualizar contextData/currentNodeId:`, error);
@@ -1215,25 +1452,57 @@ export class FlowEngineService {
     edges: any[],
     contextData: FlowContextData
   ): Promise<void> {
-    console.log(`[Flow Engine] 🚀 Processando nó START: ${node.id}`);
-    console.log(`[Flow Engine]   - Total de edges: ${edges.length}`);
-    console.log(`[Flow Engine]   - Edges saindo do START:`, edges.filter(e => e.source === node.id).map(e => ({ id: e.id, target: e.target })));
+    console.log(`[Flow Engine] 🚀🚀🚀 INICIANDO processStartNode`);
+    console.log(`[Flow Engine] 🚀 Execução: ${executionId}`);
+    console.log(`[Flow Engine] 🚀 Nó START ID: ${node.id}`);
+    console.log(`[Flow Engine] 🚀 Total de edges: ${edges.length}`);
+    console.log(`[Flow Engine] 🚀 Edges saindo do START:`, edges.filter(e => e.source === node.id).map(e => ({ id: e.id, target: e.target })));
     
     // Nó START apenas inicia o flow, avança para o próximo nó
     const nextEdge = edges.find((edge) => edge.source === node.id);
     
     if (nextEdge) {
-      console.log(`[Flow Engine] ✅ Edge encontrada. Avançando para nó: ${nextEdge.target}`);
-      console.log(`[Flow Engine]   - Nó atual (START): ${node.id}`);
-      console.log(`[Flow Engine]   - Próximo nó: ${nextEdge.target}`);
+      console.log(`[Flow Engine] ✅✅✅ Edge encontrada! Avançando para próximo nó`);
+      console.log(`[Flow Engine] ✅ Edge ID: ${nextEdge.id}`);
+      console.log(`[Flow Engine] ✅ Nó atual (START): ${node.id}`);
+      console.log(`[Flow Engine] ✅ Próximo nó ID: ${nextEdge.target}`);
+      
+      // Verificar se o próximo nó existe
+      const nextNode = nodes.find(n => n.id === nextEdge.target);
+      if (!nextNode) {
+        console.error(`[Flow Engine] ❌❌❌ Próximo nó ${nextEdge.target} NÃO encontrado na lista de nós!`);
+        throw new Error(`Próximo nó não encontrado: ${nextEdge.target}`);
+      }
+      console.log(`[Flow Engine] ✅ Próximo nó encontrado: ${nextNode.id} (tipo: ${nextNode.type})`);
+      
+      // CRÍTICO: Garantir que contextData está atualizado no banco antes de processar próximo nó
+      // Buscar contextData mais recente do banco
+      const currentExecution = await this.prisma.flowExecution.findUnique({
+        where: { id: executionId },
+        select: { contextData: true },
+      });
+      
+      if (currentExecution?.contextData) {
+        const latestContextData = currentExecution.contextData as any;
+        // Mesclar com o contextData passado, priorizando o do banco
+        if (latestContextData.campaignId) {
+          (contextData as any).campaignId = latestContextData.campaignId;
+        }
+        if (latestContextData.variables) {
+          contextData.variables = { ...latestContextData.variables, ...contextData.variables };
+        }
+        console.log(`[Flow Engine] 🔒 ContextData atualizado do banco antes de processar próximo nó`);
+      }
       
       // Processar próximo nó de forma assíncrona para não bloquear
       // Mas aguardar sua conclusão antes de finalizar o START
       try {
+        console.log(`[Flow Engine] 🔄 Chamando processNode para próximo nó: ${nextEdge.target}`);
         await this.processNode(executionId, nextEdge.target, nodes, edges, contextData);
-        console.log(`[Flow Engine] ✅ Próximo nó processado com sucesso após START`);
+        console.log(`[Flow Engine] ✅✅✅ Próximo nó processado com sucesso após START`);
       } catch (error: any) {
-        console.error(`[Flow Engine] ❌ Erro ao processar próximo nó após START:`, error.message);
+        console.error(`[Flow Engine] ❌❌❌ Erro ao processar próximo nó após START:`, error.message);
+        console.error(`[Flow Engine] ❌ Stack trace:`, error.stack);
         throw error;
       }
     } else {
@@ -1241,6 +1510,8 @@ export class FlowEngineService {
       // Se não há próximo nó, finalizar execução
       await this.completeExecution(executionId);
     }
+    
+    console.log(`[Flow Engine] 🚀🚀🚀 FINALIZANDO processStartNode`);
   }
 
   /**
@@ -1898,6 +2169,43 @@ export class FlowEngineService {
     node: EndNode,
     contextData: FlowContextData
   ): Promise<void> {
+    // CRÍTICO: Garantir que campaignId está no contextData antes de completar
+    // Buscar execução atual para preservar campaignId se não estiver no contextData
+    const currentExecution = await this.prisma.flowExecution.findUnique({
+      where: { id: executionId },
+      select: { contextData: true },
+    });
+    
+    const currentContextData = currentExecution?.contextData as any;
+    const existingCampaignId = currentContextData?.campaignId;
+    
+    // CRÍTICO: SEMPRE preservar campaignId se existir no contextData original
+    // Isso é ABSOLUTAMENTE ESSENCIAL para que a verificação funcione
+    if (existingCampaignId) {
+      (contextData as any).campaignId = existingCampaignId;
+      console.log(`[Flow Engine] 🔒🔒🔒 CampaignId PRESERVADO no processEndNode: ${existingCampaignId}`);
+    } else {
+      console.log(`[Flow Engine] ⚠️⚠️⚠️ ATENÇÃO: Nenhum campaignId encontrado no contextData da execução ${executionId}!`);
+      console.log(`[Flow Engine] ⚠️ ContextData atual:`, JSON.stringify(currentContextData, null, 2));
+    }
+    
+    // Atualizar contextData no banco ANTES de completar para garantir que campaignId está salvo
+    try {
+      await this.prisma.flowExecution.update({
+        where: { id: executionId },
+        data: {
+          contextData: contextData as any,
+        },
+      });
+      const finalCampaignId = (contextData as any).campaignId;
+      console.log(`[Flow Engine] 📝📝📝 ContextData atualizado no nó END. CampaignId: ${finalCampaignId || 'N/A'}`);
+      if (!finalCampaignId) {
+        console.error(`[Flow Engine] ❌❌❌ ERRO CRÍTICO: CampaignId NÃO está no contextData ao completar execução!`);
+      }
+    } catch (error) {
+      console.error(`[Flow Engine] ❌ ERRO ao atualizar contextData no nó END:`, error);
+    }
+    
     // Enviar mensagem final se configurada
     if (node.config.message) {
       const execution = await this.prisma.flowExecution.findUnique({
@@ -1937,6 +2245,37 @@ export class FlowEngineService {
       }
     }
 
+    // CRÍTICO: Buscar contextData do banco ANTES de completar para garantir que campaignId está presente
+    const finalExecution = await this.prisma.flowExecution.findUnique({
+      where: { id: executionId },
+      select: { contextData: true },
+    });
+    
+    const finalContextData = finalExecution?.contextData as any;
+    const finalCampaignId = finalContextData?.campaignId;
+    
+    if (!finalCampaignId) {
+      console.error(`[Flow Engine] ❌❌❌ ERRO CRÍTICO: CampaignId NÃO encontrado no contextData antes de completar execução ${executionId}!`);
+      console.error(`[Flow Engine] ❌ ContextData do banco:`, JSON.stringify(finalContextData, null, 2));
+      console.error(`[Flow Engine] ❌ Tentando recuperar campaignId do contextData passado...`);
+      
+      // Tentar recuperar do contextData passado como parâmetro
+      const paramCampaignId = (contextData as any).campaignId;
+      if (paramCampaignId) {
+        console.log(`[Flow Engine] 🔄 CampaignId encontrado no parâmetro: ${paramCampaignId}. Atualizando banco...`);
+        await this.prisma.flowExecution.update({
+          where: { id: executionId },
+          data: {
+            contextData: {
+              ...finalContextData,
+              campaignId: paramCampaignId,
+            } as any,
+          },
+        });
+        console.log(`[Flow Engine] ✅ CampaignId recuperado e salvo: ${paramCampaignId}`);
+      }
+    }
+    
     await this.completeExecution(executionId);
   }
 
@@ -1944,13 +2283,102 @@ export class FlowEngineService {
    * Finaliza execução do flow
    */
   private async completeExecution(executionId: string): Promise<void> {
+    // Buscar execução COMPLETA para preservar contextData (incluindo campaignId)
+    const execution = await this.prisma.flowExecution.findUnique({
+      where: { id: executionId },
+      select: { 
+        contextData: true,
+        contactId: true,
+        flowId: true,
+      },
+    });
+
+    if (!execution) {
+      console.error(`[Flow Engine] ❌ Execução ${executionId} não encontrada ao tentar completar!`);
+      return;
+    }
+
+    // Preservar contextData existente ao marcar como COMPLETED
+    let contextData = execution.contextData || {};
+    const contextDataObj = contextData as any;
+    let campaignId = contextDataObj?.campaignId;
+    
+    console.log(`[Flow Engine] 🏁 Completando execução ${executionId}:`);
+    console.log(`[Flow Engine]   - Contato: ${execution.contactId}`);
+    console.log(`[Flow Engine]   - Flow: ${execution.flowId}`);
+    console.log(`[Flow Engine]   - CampaignId no contextData: ${campaignId || 'N/A'}`);
+    console.log(`[Flow Engine]   - ContextData completo:`, JSON.stringify(contextData, null, 2));
+    
+    // CRÍTICO: Se não encontrou campaignId, tentar buscar de execuções anteriores ou do flow
+    if (!campaignId) {
+      console.error(`[Flow Engine] ❌❌❌ ERRO CRÍTICO: CampaignId NÃO encontrado no contextData!`);
+      console.error(`[Flow Engine] ❌ Tentando recuperar de outras execuções do mesmo flow e contato...`);
+      
+      // Buscar outras execuções do mesmo flow e contato que tenham campaignId
+      const otherExecutions = await this.prisma.flowExecution.findMany({
+        where: {
+          contactId: execution.contactId,
+          flowId: execution.flowId,
+          NOT: { id: executionId },
+        },
+        orderBy: { startedAt: 'desc' },
+        take: 1,
+        select: { contextData: true },
+      });
+      
+      for (const otherExec of otherExecutions) {
+        const otherContextData = otherExec.contextData as any;
+        const otherCampaignId = otherContextData?.campaignId;
+        if (otherCampaignId) {
+          campaignId = otherCampaignId;
+          (contextData as any).campaignId = campaignId;
+          console.log(`[Flow Engine] 🔄 CampaignId recuperado de outra execução: ${campaignId}`);
+          break;
+        }
+      }
+      
+      if (!campaignId) {
+        console.error(`[Flow Engine] ❌❌❌ NÃO foi possível recuperar campaignId!`);
+        console.error(`[Flow Engine] ❌ A verificação de bloqueio pode falhar!`);
+      }
+    }
+    
+    // Garantir que contextData tenha a estrutura correta
+    if (!contextDataObj.variables) {
+      (contextData as any).variables = {};
+    }
+    if (!contextDataObj.userResponses) {
+      (contextData as any).userResponses = [];
+    }
+    if (!contextDataObj.executedNodes) {
+      (contextData as any).executedNodes = [];
+    }
+    
     await this.prisma.flowExecution.update({
       where: { id: executionId },
       data: {
         status: FlowStatus.COMPLETED,
         completedAt: new Date(),
+        contextData: contextData, // Preservar contextData (incluindo campaignId)
       },
     });
+    
+    // Verificar novamente após salvar
+    const savedExecution = await this.prisma.flowExecution.findUnique({
+      where: { id: executionId },
+      select: { contextData: true },
+    });
+    
+    const savedContextData = savedExecution?.contextData as any;
+    const savedCampaignId = savedContextData?.campaignId;
+    
+    if (savedCampaignId) {
+      console.log(`[Flow Engine] ✅✅✅ Execução ${executionId} marcada como COMPLETED. CampaignId confirmado salvo: ${savedCampaignId}`);
+    } else {
+      console.error(`[Flow Engine] ❌❌❌ Execução ${executionId} completada SEM campaignId após salvar!`);
+      console.error(`[Flow Engine] ❌ ContextData salvo:`, JSON.stringify(savedContextData, null, 2));
+      console.error(`[Flow Engine] ❌ A verificação de bloqueio FALHARÁ!`);
+    }
   }
 
   /**

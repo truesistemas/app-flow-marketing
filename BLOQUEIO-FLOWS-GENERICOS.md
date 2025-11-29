@@ -122,3 +122,4 @@ O teste mostrará:
 - 🚫 **NUNCA** executa flows genéricos
 - 🚫 **ZERO** alternativas ou exceções
 
+

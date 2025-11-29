@@ -699,43 +699,45 @@ export async function flowRoutes(fastify: FastifyInstance) {
           return reply.code(400).send({ error: 'Flow não possui nó START' });
         }
 
-        // Resetar execução
+        // Preservar campaignId se existir no contextData original
+        const currentContextData = execution.contextData as any;
+        const resetContextData: any = {
+          variables: {},
+          userResponses: [],
+          executedNodes: [],
+          metadata: {
+            resetAt: new Date(),
+            previousStatus: execution.status,
+          },
+        };
+        
+        if (currentContextData?.campaignId) {
+          resetContextData.campaignId = currentContextData.campaignId;
+          console.log(`[Flow Routes] 🔄 Preservando campaignId ${currentContextData.campaignId} no reset`);
+        }
+
+        // Resetar execução (sem disparar automaticamente)
         const resetExecution = await prisma.flowExecution.update({
           where: { id: executionId },
           data: {
-            status: FlowStatus.PROCESSING,
+            status: FlowStatus.WAITING, // ✅ WAITING aguarda interação do contato
             currentNodeId: startNode.id,
-            contextData: {
-              variables: {},
-              userResponses: [],
-              executedNodes: [],
-              resetAt: new Date(),
-              previousStatus: execution.status,
-            },
+            contextData: resetContextData,
             completedAt: null,
           },
         });
 
-        console.log(`[Flow Routes] ✅ Execução ${executionId} resetada manualmente`);
+        console.log(`[Flow Routes] ✅ Execução ${executionId} resetada. Preparada para reiniciar quando o contato interagir.`);
+        console.log(`[Flow Routes] ✅ O flow será executado quando o contato enviar uma mensagem.`);
 
-        // Importar FlowEngineService e reiniciar processamento
-        const { FlowEngineService } = await import('../services/flow-engine.service');
-        const { MessageQueueService } = await import('../services/message-queue.service');
-        const { AIService } = await import('../services/ai.service');
-        const { HttpService } = await import('../services/http.service');
-
-        const messageQueue = new MessageQueueService();
-        const aiService = new AIService();
-        const httpService = new HttpService();
-        const flowEngine = new FlowEngineService(prisma, messageQueue, aiService, httpService);
-
-        // Usar método público resetExecution que já reinicia o processamento
-        await flowEngine.resetExecution(executionId);
+        // ✅ NÃO processar automaticamente aqui!
+        // O processamento só acontecerá quando o contato interagir novamente (enviar mensagem)
+        // Isso evita disparo automático de mensagens após o reset
 
         return reply.send({
           success: true,
           execution: resetExecution,
-          message: 'Execução resetada e reiniciada com sucesso',
+          message: 'Execução resetada com sucesso. O flow será executado quando o contato interagir.',
         });
       } catch (error: any) {
         console.error('Erro ao resetar execução:', error);

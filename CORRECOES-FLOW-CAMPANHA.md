@@ -120,3 +120,4 @@ Todos os pontos críticos agora têm logs detalhados:
 3. **Verificar logs** para confirmar que o flow correto está sendo disparado
 4. **Usar "Resetar Flows"** se necessário para limpar execuções antigas
 
+

@@ -94,3 +94,4 @@ Após executar o teste:
 3. **Compare** o comportamento esperado vs. o comportamento real
 4. **Aplique correções** baseadas nos resultados do teste
 
+

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import { Plus, Search, Workflow, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Search, Workflow, Trash2, Loader2, Download, Upload } from 'lucide-react';
 import { useState } from 'react';
 
 interface Flow {
@@ -23,6 +23,8 @@ export default function FlowList() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [deletingFlowId, setDeletingFlowId] = useState<string | null>(null);
+  const [exportingFlowId, setExportingFlowId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     loadFlows();
@@ -99,6 +101,107 @@ export default function FlowList() {
     }
   };
 
+  const handleExportFlow = async (flowId: string, flowName: string) => {
+    try {
+      setExportingFlowId(flowId);
+      
+      // Buscar dados completos do flow
+      const response = await api.get(`/api/flows/${flowId}`);
+      const flow = response.data.flow;
+
+      // Preparar dados para exportação (remover campos internos)
+      const exportData = {
+        name: flow.name,
+        description: flow.description,
+        triggerKeyword: flow.triggerKeyword,
+        isActive: flow.isActive,
+        nodes: flow.nodes,
+        edges: flow.edges,
+        exportedAt: new Date().toISOString(),
+        version: '1.0',
+      };
+
+      // Criar arquivo JSON e fazer download
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${flowName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      alert('Flow exportado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao exportar flow:', err);
+      alert(err.response?.data?.error || 'Erro ao exportar flow');
+    } finally {
+      setExportingFlowId(null);
+    }
+  };
+
+  const handleImportFlow = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Verificar se é arquivo JSON
+    if (!file.name.endsWith('.json')) {
+      alert('Por favor, selecione um arquivo JSON válido.');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      
+      // Ler arquivo
+      const fileContent = await file.text();
+      const importData = JSON.parse(fileContent);
+
+      // Validar estrutura básica
+      if (!importData.name || !importData.nodes || !importData.edges) {
+        alert('Arquivo JSON inválido. Certifique-se de que contém name, nodes e edges.');
+        return;
+      }
+
+      // Confirmar importação
+      const confirmMessage = `Deseja importar o flow "${importData.name}"?\n\nIsso criará um novo flow com os dados importados.`;
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+
+      // Criar novo flow com dados importados
+      const flowData = {
+        name: `${importData.name} (Importado)`,
+        description: importData.description || '',
+        triggerKeyword: importData.triggerKeyword || '',
+        nodes: importData.nodes,
+        edges: importData.edges,
+        isActive: importData.isActive !== undefined ? importData.isActive : true,
+      };
+
+      const response = await api.post('/api/flows', flowData);
+      
+      // Recarregar lista de flows
+      await loadFlows();
+      
+      alert('Flow importado com sucesso!');
+      
+      // Limpar input para permitir importar o mesmo arquivo novamente
+      event.target.value = '';
+    } catch (err: any) {
+      console.error('Erro ao importar flow:', err);
+      if (err instanceof SyntaxError) {
+        alert('Erro ao ler arquivo JSON. Certifique-se de que o arquivo está em formato válido.');
+      } else {
+        alert(err.response?.data?.error || 'Erro ao importar flow');
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -108,13 +211,27 @@ export default function FlowList() {
             Gerencie seus flows de automação
           </p>
         </div>
-        <Link
-          to="/flows/new"
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Flow
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* Botão de importar */}
+          <label className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium cursor-pointer">
+            <Upload className="w-5 h-5" />
+            {importing ? 'Importando...' : 'Importar'}
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleImportFlow}
+              disabled={importing}
+              className="hidden"
+            />
+          </label>
+          <Link
+            to="/flows/new"
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Novo Flow
+          </Link>
+        </div>
       </div>
 
       {/* Busca */}
@@ -215,23 +332,43 @@ export default function FlowList() {
                 </div>
               </Link>
 
-              {/* Botão de deletar */}
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDeleteFlow(flow.id, flow.name);
-                }}
-                disabled={deletingFlowId === flow.id}
-                className="absolute top-4 right-4 p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Deletar flow"
-              >
-                {deletingFlowId === flow.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-              </button>
+              {/* Botões de ação */}
+              <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                {/* Botão de exportar */}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleExportFlow(flow.id, flow.name);
+                  }}
+                  disabled={exportingFlowId === flow.id}
+                  className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Exportar flow"
+                >
+                  {exportingFlowId === flow.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </button>
+                {/* Botão de deletar */}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteFlow(flow.id, flow.name);
+                  }}
+                  disabled={deletingFlowId === flow.id}
+                  className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Deletar flow"
+                >
+                  {deletingFlowId === flow.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           ))}
         </div>
