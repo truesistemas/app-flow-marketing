@@ -4,6 +4,72 @@ export class ContactService {
   constructor(private prisma: PrismaClient) {}
 
   /**
+   * Listar contatos da organização
+   */
+  async listContacts(
+    organizationId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      search?: string;
+    } = {}
+  ) {
+    const { page = 1, limit = 50, search = '' } = options;
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      organizationId,
+    };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { phone: { contains: search } },
+      ];
+    }
+
+    const [contacts, total] = await Promise.all([
+      this.prisma.contact.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+      this.prisma.contact.count({ where }),
+    ]);
+
+    return {
+      contacts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Obter contato por ID
+   */
+  async getContact(contactId: string, organizationId: string) {
+    const contact = await this.prisma.contact.findFirst({
+      where: {
+        id: contactId,
+        organizationId,
+      },
+    });
+
+    if (!contact) {
+      throw new Error('Contato não encontrado');
+    }
+
+    return contact;
+  }
+
+  /**
    * Criar ou atualizar contato
    */
   async createOrUpdateContact(

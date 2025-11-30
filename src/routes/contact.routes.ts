@@ -10,6 +10,22 @@ export async function contactRoutes(fastify: FastifyInstance) {
   // Todas as rotas requerem autenticação
   fastify.addHook('preHandler', authMiddleware);
 
+  /**
+   * GET /api/contacts
+   * Listar contatos da organização
+   */
+  fastify.get('/', async (request: AuthenticatedRequest, reply) => {
+    return contactController.listContacts(request, reply);
+  });
+
+  /**
+   * GET /api/contacts/:id
+   * Obter contato por ID
+   */
+  fastify.get('/:id', async (request: AuthenticatedRequest, reply) => {
+    return contactController.getContact(request, reply);
+  });
+
   fastify.post('/', async (request: AuthenticatedRequest, reply) => {
     return contactController.createOrUpdateContact(request, reply);
   });

@@ -8,6 +8,7 @@ import CampaignEdit from '../pages/campaigns/CampaignEdit';
 import CampaignDetail from '../pages/campaigns/CampaignDetail';
 import FlowList from '../pages/flows/FlowList';
 import FlowBuilderPage from '../pages/flows/FlowBuilder';
+import ContactList from '../pages/contacts/ContactList';
 import Integrations from '../pages/settings/Integrations';
 import Profile from '../pages/settings/Profile';
 import Organization from '../pages/settings/Organization';
@@ -76,6 +77,10 @@ export const router = createBrowserRouter([
             element: <FlowBuilderPage />,
           },
         ],
+      },
+      {
+        path: 'contacts',
+        element: <ContactList />,
       },
       {
         path: 'settings',

@@ -42,21 +42,24 @@ enum LeadStatus {
 }
 
 model Organization {
-  id            String   @id @default(cuid())
-  name          String
-  slug          String   @unique
-  apiKeyEvolution String? @map("apiKeyEvolution")
-  createdAt     DateTime @default(now()) @map("createdAt")
-  updatedAt     DateTime @updatedAt @map("updatedAt")
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  apiKeyEvolution String?  @map("apiKeyEvolution")
+  openaiApiKey    String?  @map("openai_api_key")
+  geminiApiKey    String?  @map("gemini_api_key")
+  anthropicApiKey String?  @map("anthropic_api_key")
+  createdAt       DateTime @default(now()) @map("createdAt")
+  updatedAt       DateTime @updatedAt @map("updatedAt")
 
-  users            User[]
-  contacts         Contact[]
-  flows            Flow[]
-  campaigns        Campaign[]
+  users              User[]
+  contacts           Contact[]
+  flows              Flow[]
+  campaigns          Campaign[]
   evolutionInstances EvolutionInstance[]
 
-  @@map("organizations")
   @@index([slug])
+  @@map("organizations")
 }
 
 model User {
@@ -70,144 +73,144 @@ model User {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@map("users")
   @@index([email])
   @@index([organizationId])
+  @@map("users")
 }
 
 model Contact {
-  id           String   @id @default(cuid())
-  phone        String
-  name         String?
-  customFields Json     @default("{}") @map("custom_fields")
-  organizationId String @map("organization_id")
-  createdAt    DateTime @default(now()) @map("createdAt")
-  updatedAt    DateTime @updatedAt @map("updatedAt")
+  id             String   @id @default(cuid())
+  phone          String
+  name           String?
+  customFields   Json     @default("{}") @map("custom_fields")
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("createdAt")
+  updatedAt      DateTime @updatedAt @map("updatedAt")
 
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   flowExecutions FlowExecution[]
   campaignLeads  CampaignLead[]
 
-  @@map("contacts")
   @@unique([phone, organizationId])
   @@index([phone])
   @@index([organizationId])
+  @@map("contacts")
 }
 
 model Flow {
-  id            String   @id @default(cuid())
-  name          String
-  description   String?
-  nodes         Json
-  edges         Json
-  triggerKeyword String? @map("trigger_keyword")
-  isActive      Boolean  @default(true) @map("is_active")
-  cooldownHours Int?     @map("cooldown_hours")
-  organizationId String  @map("organization_id")
-  createdAt     DateTime @default(now()) @map("createdAt")
-  updatedAt     DateTime @updatedAt @map("updatedAt")
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  nodes          Json
+  edges          Json
+  triggerKeyword String?  @map("trigger_keyword")
+  isActive       Boolean  @default(true) @map("is_active")
+  cooldownHours  Int?     @map("cooldown_hours")
+  organizationId String   @map("organization_id")
+  createdAt      DateTime @default(now()) @map("createdAt")
+  updatedAt      DateTime @updatedAt @map("updatedAt")
 
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  executions     FlowExecution[]
-  campaigns      Campaign[]
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  executions   FlowExecution[]
+  campaigns    Campaign[]
 
-  @@map("flows")
   @@index([organizationId])
   @@index([triggerKeyword])
   @@index([isActive])
+  @@map("flows")
 }
 
 model FlowExecution {
-  id           String     @id @default(cuid())
-  contactId    String     @map("contact_id")
-  flowId       String     @map("flow_id")
-  currentNodeId String?   @map("current_node_id")
-  status       FlowStatus @default(WAITING)
-  contextData  Json       @default("{}") @map("context_data")
-  startedAt    DateTime   @default(now()) @map("started_at")
-  updatedAt    DateTime   @updatedAt @map("updatedAt")
-  completedAt  DateTime?  @map("completed_at")
+  id            String     @id @default(cuid())
+  contactId     String     @map("contact_id")
+  flowId        String     @map("flow_id")
+  currentNodeId String?    @map("current_node_id")
+  status        FlowStatus @default(WAITING)
+  contextData   Json       @default("{}") @map("context_data")
+  startedAt     DateTime   @default(now()) @map("started_at")
+  updatedAt     DateTime   @updatedAt @map("updatedAt")
+  completedAt   DateTime?  @map("completed_at")
 
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  flow    Flow   @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flow    Flow    @relation(fields: [flowId], references: [id], onDelete: Cascade)
 
-  @@map("flow_executions")
   @@index([contactId])
   @@index([flowId])
   @@index([status])
   @@index([contactId, status])
+  @@map("flow_executions")
 }
 
 model EvolutionInstance {
-  id                 String         @id @default(cuid())
-  name               String
-  instanceName       String         @map("instance_name")
-  apiUrl             String         @map("api_url")
-  apiKey             String?        @map("api_key")
-  status             InstanceStatus @default(INACTIVE)
-  connectedPhone     String?        @map("connected_phone")
-  lastTestedAt       DateTime?      @map("last_tested_at")
-  testResult         Json?          @default("{}") @map("test_result")
-  integrationType    String?        @default("WEBHOOK") @map("integration_type")
-  websocketGlobalMode Boolean?      @default(false) @map("websocket_global_mode")
-  organizationId     String         @map("organization_id")
-  createdAt          DateTime       @default(now()) @map("createdAt")
-  updatedAt          DateTime       @updatedAt @map("updatedAt")
+  id                  String         @id @default(cuid())
+  name                String
+  instanceName        String         @map("instance_name")
+  apiUrl              String         @map("api_url")
+  apiKey              String?        @map("api_key")
+  status              InstanceStatus @default(INACTIVE)
+  connectedPhone      String?        @map("connected_phone")
+  lastTestedAt        DateTime?      @map("last_tested_at")
+  testResult          Json?          @default("{}") @map("test_result")
+  integrationType     String?        @default("WEBHOOK") @map("integration_type")
+  websocketGlobalMode Boolean?       @default(false) @map("websocket_global_mode")
+  organizationId      String         @map("organization_id")
+  createdAt           DateTime       @default(now()) @map("createdAt")
+  updatedAt           DateTime       @updatedAt @map("updatedAt")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   campaigns    Campaign[]
 
-  @@map("evolution_instances")
   @@index([organizationId])
   @@index([status])
+  @@map("evolution_instances")
 }
 
 model Campaign {
-  id            String         @id @default(cuid())
-  name          String
-  description   String?
-  flowId        String?        @map("flow_id")
-  instanceId    String?        @map("instance_id")
-  instanceName  String?        @map("instance_name")
-  status        CampaignStatus @default(DRAFT)
-  scheduledAt   DateTime?      @map("scheduled_at")
-  startedAt     DateTime?      @map("started_at")
-  completedAt   DateTime?      @map("completed_at")
-  messageContent Json?         @map("message_content")
-  organizationId String        @map("organization_id")
-  createdAt     DateTime       @default(now()) @map("createdAt")
-  updatedAt     DateTime       @updatedAt @map("updatedAt")
+  id             String         @id @default(cuid())
+  name           String
+  description    String?
+  flowId         String?        @map("flow_id")
+  instanceId     String?        @map("instance_id")
+  instanceName   String?        @map("instance_name")
+  status         CampaignStatus @default(DRAFT)
+  scheduledAt    DateTime?      @map("scheduled_at")
+  startedAt      DateTime?      @map("started_at")
+  completedAt    DateTime?      @map("completed_at")
+  messageContent Json?          @map("message_content")
+  organizationId String         @map("organization_id")
+  createdAt      DateTime       @default(now()) @map("createdAt")
+  updatedAt      DateTime       @updatedAt @map("updatedAt")
 
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  flow           Flow?          @relation(fields: [flowId], references: [id], onDelete: Restrict)
-  instance       EvolutionInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
-  leads          CampaignLead[]
-  stats          CampaignStats?
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  flow         Flow?              @relation(fields: [flowId], references: [id], onDelete: Restrict)
+  instance     EvolutionInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  leads        CampaignLead[]
+  stats        CampaignStats?
 
-  @@map("campaigns")
   @@index([organizationId])
   @@index([status])
   @@index([flowId])
   @@index([instanceId])
+  @@map("campaigns")
 }
 
 model CampaignLead {
-  id        String     @id @default(cuid())
-  campaignId String    @map("campaign_id")
-  contactId String     @map("contact_id")
-  status    LeadStatus @default(PENDING)
-  sentAt    DateTime?  @map("sent_at")
-  error     String?
-  createdAt DateTime  @default(now()) @map("createdAt")
+  id         String     @id @default(cuid())
+  campaignId String     @map("campaign_id")
+  contactId  String     @map("contact_id")
+  status     LeadStatus @default(PENDING)
+  sentAt     DateTime?  @map("sent_at")
+  error      String?
+  createdAt  DateTime   @default(now()) @map("createdAt")
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@map("campaign_leads")
   @@unique([campaignId, contactId])
   @@index([campaignId])
   @@index([status])
   @@index([contactId])
+  @@map("campaign_leads")
 }
 
 model CampaignStats {

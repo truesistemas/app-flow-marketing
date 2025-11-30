@@ -1978,9 +1978,27 @@ export class FlowEngineService {
         }
       }
 
+      // Buscar dados da execução (incluindo organizationId e dados para envio de mensagem)
+      const execution = await this.prisma.flowExecution.findUnique({
+        where: { id: executionId },
+        include: {
+          contact: true,
+          flow: {
+            include: {
+              organization: true,
+            },
+          },
+        },
+      });
+
+      if (!execution) {
+        throw new Error(`Execução ${executionId} não encontrada`);
+      }
+
       // Chamar serviço de IA
       const aiResponse = await this.aiService.generateResponse({
         provider: node.config.provider,
+        organizationId: execution.flow.organizationId, // Passar organizationId para buscar chave do banco
         model: node.config.model,
         systemPrompt: node.config.systemPrompt,
         userPrompt,
@@ -2043,10 +2061,6 @@ export class FlowEngineService {
       }
 
       // Enviar resposta da IA como mensagem
-      const execution = await this.prisma.flowExecution.findUnique({
-        where: { id: executionId },
-        include: { contact: true, flow: { include: { organization: true } } },
-      });
 
       if (execution) {
         // Buscar instância ativa

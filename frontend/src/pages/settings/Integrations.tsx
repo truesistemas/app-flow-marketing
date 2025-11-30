@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useEvolutionInstanceStore, type EvolutionInstance } from '../../store/useEvolutionInstanceStore';
+import { useApiKeysStore } from '../../store/useApiKeysStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import {
   Plug,
   Plus,
@@ -18,6 +20,10 @@ import {
   Upload,
   File,
   Radio,
+  Brain,
+  Eye,
+  EyeOff,
+  Save,
 } from 'lucide-react';
 
 export default function Integrations() {
@@ -36,6 +42,16 @@ export default function Integrations() {
     testWebSocket,
   } = useEvolutionInstanceStore();
 
+  const { user } = useAuthStore();
+  const {
+    keys: apiKeys,
+    loading: apiKeysLoading,
+    error: apiKeysError,
+    getApiKeys,
+    updateApiKey,
+    testApiKey,
+  } = useApiKeysStore();
+
   const [showModal, setShowModal] = useState(false);
   const [editingInstance, setEditingInstance] = useState<EvolutionInstance | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -50,6 +66,29 @@ export default function Integrations() {
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const mediaFileInputRef = useRef<HTMLInputElement>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+  // API Keys state
+  const [apiKeyValues, setApiKeyValues] = useState<{
+    openai: string;
+    gemini: string;
+    anthropic: string;
+  }>({
+    openai: '',
+    gemini: '',
+    anthropic: '',
+  });
+  const [showApiKeys, setShowApiKeys] = useState<{
+    openai: boolean;
+    gemini: boolean;
+    anthropic: boolean;
+  }>({
+    openai: false,
+    gemini: false,
+    anthropic: false,
+  });
+  const [savingApiKey, setSavingApiKey] = useState<string | null>(null);
+  const [testingApiKey, setTestingApiKey] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'evolution' | 'ai'>('evolution');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -66,6 +105,22 @@ export default function Integrations() {
   useEffect(() => {
     listInstances();
   }, [listInstances]);
+
+  useEffect(() => {
+    if (user?.organizationId) {
+      getApiKeys(user.organizationId);
+    }
+  }, [user?.organizationId, getApiKeys]);
+
+  useEffect(() => {
+    if (apiKeys) {
+      setApiKeyValues({
+        openai: apiKeys.openai || '',
+        gemini: apiKeys.gemini || '',
+        anthropic: apiKeys.anthropic || '',
+      });
+    }
+  }, [apiKeys]);
 
   const getStatusBadge = (status: EvolutionInstance['status']) => {
     const badges = {
@@ -457,21 +512,63 @@ export default function Integrations() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Integrações</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Gerencie suas instâncias da Evolution API
-          </p>
-        </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          Nova Instância
-        </button>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Integrações</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">
+          Gerencie suas integrações e chaves API
+        </p>
       </div>
+
+      {/* Abas */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('evolution')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'evolution'
+                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Plug className="w-5 h-5" />
+              Evolution API
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'ai'
+                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Brain className="w-5 h-5" />
+              Chaves de IA
+            </div>
+          </button>
+        </nav>
+      </div>
+
+      {/* Conteúdo da aba Evolution API */}
+      {activeTab === 'evolution' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Instâncias Evolution API</h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">
+                Gerencie suas instâncias do WhatsApp
+              </p>
+            </div>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Nova Instância
+            </button>
+          </div>
 
       {loading && instances.length === 0 ? (
         <div className="flex items-center justify-center py-12">
@@ -581,6 +678,282 @@ export default function Integrations() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+        </div>
+      )}
+
+      {/* Conteúdo da aba Chaves de IA */}
+      {activeTab === 'ai' && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Chaves de IA</h2>
+            <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm">
+              Configure suas chaves API para usar blocos de IA nos flows
+            </p>
+          </div>
+
+          <div className="glass-effect p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+            {apiKeysError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg text-sm">
+                {apiKeysError}
+              </div>
+            )}
+
+            <div className="space-y-6">
+              {/* OpenAI */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">OpenAI</h3>
+                    {apiKeys?.openai ? (
+                      <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded border border-green-200 dark:border-green-800">
+                        Configurada
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400 text-xs rounded border border-gray-200 dark:border-gray-700">
+                        Não configurada
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type={showApiKeys.openai ? 'text' : 'password'}
+                      value={apiKeyValues.openai}
+                      onChange={(e) => setApiKeyValues({ ...apiKeyValues, openai: e.target.value })}
+                      placeholder={apiKeys?.openai ? apiKeys.openai : 'sk-...'}
+                      className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKeys({ ...showApiKeys, openai: !showApiKeys.openai })}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      {showApiKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setTestingApiKey('openai');
+                      const result = await testApiKey(user.organizationId, 'OPENAI', apiKeyValues.openai || undefined);
+                      setTestingApiKey(null);
+                      if (result.success) {
+                        alert('Chave testada com sucesso!');
+                      } else {
+                        alert(`Erro ao testar: ${result.error}`);
+                      }
+                    }}
+                    disabled={testingApiKey === 'openai' || apiKeysLoading}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {testingApiKey === 'openai' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <TestTube className="w-4 h-4" />
+                    )}
+                    Testar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setSavingApiKey('openai');
+                      try {
+                        await updateApiKey(user.organizationId, 'openai', apiKeyValues.openai || null);
+                        alert('Chave salva com sucesso!');
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao salvar chave');
+                      } finally {
+                        setSavingApiKey(null);
+                      }
+                    }}
+                    disabled={savingApiKey === 'openai' || apiKeysLoading}
+                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {savingApiKey === 'openai' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Salvar
+                  </button>
+                </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                A chave deve começar com "sk-"
+              </p>
+              </div>
+
+              {/* Gemini */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Google Gemini</h3>
+                    {apiKeys?.gemini ? (
+                      <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded border border-green-200 dark:border-green-800">
+                        Configurada
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400 text-xs rounded border border-gray-200 dark:border-gray-700">
+                        Não configurada
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type={showApiKeys.gemini ? 'text' : 'password'}
+                      value={apiKeyValues.gemini}
+                      onChange={(e) => setApiKeyValues({ ...apiKeyValues, gemini: e.target.value })}
+                      placeholder={apiKeys?.gemini ? apiKeys.gemini : 'AIza...'}
+                      className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKeys({ ...showApiKeys, gemini: !showApiKeys.gemini })}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      {showApiKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setTestingApiKey('gemini');
+                      const result = await testApiKey(user.organizationId, 'GEMINI', apiKeyValues.gemini || undefined);
+                      setTestingApiKey(null);
+                      if (result.success) {
+                        alert('Chave testada com sucesso!');
+                      } else {
+                        alert(`Erro ao testar: ${result.error}`);
+                      }
+                    }}
+                    disabled={testingApiKey === 'gemini' || apiKeysLoading}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {testingApiKey === 'gemini' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <TestTube className="w-4 h-4" />
+                    )}
+                    Testar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setSavingApiKey('gemini');
+                      try {
+                        await updateApiKey(user.organizationId, 'gemini', apiKeyValues.gemini || null);
+                        alert('Chave salva com sucesso!');
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao salvar chave');
+                      } finally {
+                        setSavingApiKey(null);
+                      }
+                    }}
+                    disabled={savingApiKey === 'gemini' || apiKeysLoading}
+                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {savingApiKey === 'gemini' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Salvar
+                  </button>
+                </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                A chave deve começar com "AIza"
+              </p>
+              </div>
+
+              {/* Anthropic */}
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Anthropic (Claude)</h3>
+                    {apiKeys?.anthropic ? (
+                      <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded border border-green-200 dark:border-green-800">
+                        Configurada
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400 text-xs rounded border border-gray-200 dark:border-gray-700">
+                        Não configurada
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type={showApiKeys.anthropic ? 'text' : 'password'}
+                      value={apiKeyValues.anthropic}
+                      onChange={(e) => setApiKeyValues({ ...apiKeyValues, anthropic: e.target.value })}
+                      placeholder={apiKeys?.anthropic ? apiKeys.anthropic : 'sk-ant-...'}
+                      className="w-full px-4 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKeys({ ...showApiKeys, anthropic: !showApiKeys.anthropic })}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      {showApiKeys.anthropic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setTestingApiKey('anthropic');
+                      const result = await testApiKey(user.organizationId, 'ANTHROPIC', apiKeyValues.anthropic || undefined);
+                      setTestingApiKey(null);
+                      if (result.success) {
+                        alert('Chave testada com sucesso!');
+                      } else {
+                        alert(`Erro ao testar: ${result.error}`);
+                      }
+                    }}
+                    disabled={testingApiKey === 'anthropic' || apiKeysLoading}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {testingApiKey === 'anthropic' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <TestTube className="w-4 h-4" />
+                    )}
+                    Testar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!user?.organizationId) return;
+                      setSavingApiKey('anthropic');
+                      try {
+                        await updateApiKey(user.organizationId, 'anthropic', apiKeyValues.anthropic || null);
+                        alert('Chave salva com sucesso!');
+                      } catch (error: any) {
+                        alert(error.response?.data?.error || 'Erro ao salvar chave');
+                      } finally {
+                        setSavingApiKey(null);
+                      }
+                    }}
+                    disabled={savingApiKey === 'anthropic' || apiKeysLoading}
+                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {savingApiKey === 'anthropic' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Salvar
+                  </button>
+                </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                A chave deve começar com "sk-ant-"
+              </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -360,7 +360,7 @@ export async function flowRoutes(fastify: FastifyInstance) {
           const { HttpService } = await import('../services/http.service');
 
           const messageQueue = new MessageQueueService();
-          const aiService = new AIService();
+          const aiService = new AIService(prisma);
           const httpService = new HttpService();
           const flowEngine = new FlowEngineService(prisma, messageQueue, aiService, httpService);
 

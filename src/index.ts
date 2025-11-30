@@ -17,6 +17,7 @@ import { flowRoutes } from './routes/flow.routes';
 import { evolutionInstanceRoutes } from './routes/evolution-instance.routes';
 import { contactRoutes } from './routes/contact.routes';
 import { mediaRoutes } from './routes/media.routes';
+import { organizationRoutes } from './routes/organization.routes';
 
 /**
  * Aplicação principal
@@ -32,7 +33,7 @@ async function bootstrap() {
 
   // Inicializar serviços
   const messageQueue = new MessageQueueService();
-  const aiService = new AIService();
+  const aiService = new AIService(prisma);
   const httpService = new HttpService();
   const flowEngine = new FlowEngineService(prisma, messageQueue, aiService, httpService);
 
@@ -140,6 +141,7 @@ async function bootstrap() {
   await app.register(evolutionInstanceRoutes, { prefix: '/api/evolution-instances' });
   await app.register(mediaRoutes, { prefix: '/api/media' });
   await app.register(contactRoutes, { prefix: '/api/contacts' });
+  await app.register(organizationRoutes, { prefix: '/api/organizations' });
 
   // Iniciar servidor
   const port = parseInt(process.env.PORT || '3000');

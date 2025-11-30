@@ -660,7 +660,7 @@ export class CampaignController {
       const { HttpService } = await import('../services/http.service');
 
       const messageQueue = new MessageQueueService();
-      const aiService = new AIService();
+      const aiService = new AIService(this.prisma);
       const httpService = new HttpService();
       const flowEngine = new FlowEngineService(this.prisma, messageQueue, aiService, httpService);
 

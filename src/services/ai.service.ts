@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { PrismaClient } from '@prisma/client';
 
 /**
  * AI Service
@@ -6,11 +7,68 @@ import axios from 'axios';
  * Gerencia chamadas para diferentes provedores de LLM (OpenAI, Gemini, Anthropic)
  */
 export class AIService {
+  constructor(private prisma?: PrismaClient) {}
+
+  /**
+   * Busca chave API do banco de dados ou variável de ambiente
+   */
+  private async getApiKey(
+    provider: 'OPENAI' | 'GEMINI' | 'ANTHROPIC',
+    organizationId?: string
+  ): Promise<string> {
+    // Se organizationId fornecido, buscar do banco
+    if (organizationId && this.prisma) {
+      const organization = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: {
+          openaiApiKey: true,
+          geminiApiKey: true,
+          anthropicApiKey: true,
+        },
+      });
+
+      if (organization) {
+        let apiKey: string | null = null;
+        switch (provider) {
+          case 'OPENAI':
+            apiKey = organization.openaiApiKey;
+            break;
+          case 'GEMINI':
+            apiKey = organization.geminiApiKey;
+            break;
+          case 'ANTHROPIC':
+            apiKey = organization.anthropicApiKey;
+            break;
+        }
+
+        if (apiKey) {
+          return apiKey;
+        }
+      }
+    }
+
+    // Fallback para variáveis de ambiente
+    const envKey = provider === 'OPENAI' 
+      ? process.env.OPENAI_API_KEY
+      : provider === 'GEMINI'
+      ? process.env.GEMINI_API_KEY
+      : process.env.ANTHROPIC_API_KEY;
+
+    if (envKey) {
+      return envKey;
+    }
+
+    // Nenhuma chave encontrada
+    const providerName = provider === 'OPENAI' ? 'OpenAI' : provider === 'GEMINI' ? 'Gemini' : 'Anthropic';
+    throw new Error(`${providerName} API Key não configurada. Configure em /settings/integrations ou via variável de ambiente.`);
+  }
+
   /**
    * Gera resposta usando LLM
    */
   async generateResponse(config: {
     provider: 'OPENAI' | 'GEMINI' | 'ANTHROPIC';
+    organizationId?: string; // NOVO: ID da organização para buscar chave do banco
     model: string;
     systemPrompt?: string;
     userPrompt: string;
@@ -20,11 +78,11 @@ export class AIService {
   }): Promise<string> {
     switch (config.provider) {
       case 'OPENAI':
-        return this.callOpenAI(config);
+        return this.callOpenAI(config, config.organizationId);
       case 'GEMINI':
-        return this.callGemini(config);
+        return this.callGemini(config, config.organizationId);
       case 'ANTHROPIC':
-        return this.callAnthropic(config);
+        return this.callAnthropic(config, config.organizationId);
       default:
         throw new Error(`Provedor de IA não suportado: ${config.provider}`);
     }
@@ -33,18 +91,18 @@ export class AIService {
   /**
    * Chama API da OpenAI
    */
-  private async callOpenAI(config: {
-    model: string;
-    systemPrompt?: string;
-    userPrompt: string;
-    contextMessages?: Array<{ role: string; content: string }>;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<string> {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY não configurada');
-    }
+  private async callOpenAI(
+    config: {
+      model: string;
+      systemPrompt?: string;
+      userPrompt: string;
+      contextMessages?: Array<{ role: string; content: string }>;
+      temperature?: number;
+      maxTokens?: number;
+    },
+    organizationId?: string
+  ): Promise<string> {
+    const apiKey = await this.getApiKey('OPENAI', organizationId);
 
     const messages: Array<{ role: string; content: string }> = [];
 
@@ -92,18 +150,18 @@ export class AIService {
   /**
    * Chama API do Google Gemini
    */
-  private async callGemini(config: {
-    model: string;
-    systemPrompt?: string;
-    userPrompt: string;
-    contextMessages?: Array<{ role: string; content: string }>;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY não configurada');
-    }
+  private async callGemini(
+    config: {
+      model: string;
+      systemPrompt?: string;
+      userPrompt: string;
+      contextMessages?: Array<{ role: string; content: string }>;
+      temperature?: number;
+      maxTokens?: number;
+    },
+    organizationId?: string
+  ): Promise<string> {
+    const apiKey = await this.getApiKey('GEMINI', organizationId);
 
     const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
@@ -155,18 +213,18 @@ export class AIService {
   /**
    * Chama API da Anthropic (Claude)
    */
-  private async callAnthropic(config: {
-    model: string;
-    systemPrompt?: string;
-    userPrompt: string;
-    contextMessages?: Array<{ role: string; content: string }>;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<string> {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('ANTHROPIC_API_KEY não configurada');
-    }
+  private async callAnthropic(
+    config: {
+      model: string;
+      systemPrompt?: string;
+      userPrompt: string;
+      contextMessages?: Array<{ role: string; content: string }>;
+      temperature?: number;
+      maxTokens?: number;
+    },
+    organizationId?: string
+  ): Promise<string> {
+    const apiKey = await this.getApiKey('ANTHROPIC', organizationId);
 
     const messages: Array<{ role: string; content: string }> = [];
 
